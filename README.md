@@ -98,12 +98,189 @@ gaining the TPM 1.2 chip ownership. This means that either the
 Please note that the _well-known key_ is not equivalent to an empty key.
 
 > [!IMPORTANT]
-> If you changed the storage root key (SRK) to a _well-known key_, do not forget
+> If you changed the storage root key (SRK) to a _well-known_ key, do not forget
 > to call `update-initramfs -u` (on Debian-like system) or `dracut -f` (on
 > Fedora-like system) to reinstall the necessary boot files, because the
-> `/var/lib/tpm` directory is part of the installation (unless dracut is
-> configured to generate initramfs images in _default_ mode, i.e. not in
- _host-only_ mode).
+> `/var/lib/tpm` directory is part of the installation. This applies to
+> `initramfs-tools` and Dracut _host-only_ mode. In Dracut _default_ mode the
+> `/var/lib/tpm` is prepared with configuration allowing accessing the TPM 1.2
+> chip with a _well-known_ SRK.
+
+##### Unlocking with Separately-Encrypted `/var` Volume with TPM1 PIN
+
+Since TPM1 pin uses `tcsd` daemon from Trousers project for accessing the TPM
+1.2 chip, it needs to be able to start early during the boot process in order
+to unlock the root filesystem automatically. The `/var/lib/tpm` directory
+contains `tcsd` runtime data and needs to be available prior to the `tcsd`
+daemon startup.
+
+A small copy of the necessary `/var` files is part of the initramfs image
+prepared by Clevis already, so the daemon _should_ be able to start during the
+_initrd bootup_ phase (if everything is configured correctly). After switching
+to real root `/` filesystem, the _System manager bootup_ phase starts and the
+`/var` directory is mounted from the actual target. Clevis cannot unlock it at
+that time (`tcsd` would need `/var` for unlocking `/var`), so it has to be
+unlocked already. See below how to do it with `initramfs-tools` and with Dracut.
+
+If the `/var` volume is part of the main LVM volume group (same as root `/`
+filesystem) and is protected by the same LUKS volume, it is not necessary to do
+anything special. But if the `/var` volume is encrypted separetely, i.e. uses a
+different LUKS volume (same password does not influence this), check the
+following instructions on how to enable automatic unlocking by Clevis.
+
+###### `initramfs-tools` Initrd Bootup
+
+The `initramfs-tools` ensures that the root and swap file systems are unlocked
+by copying the corresponding option lines from the `/etc/crypttab` file and
+using them during bootup. We need to ensure that the `/var` volume options are
+copied as well by adding `initramfs` to the `/etc/crypttab` options like in the
+follwing example:
+
+> `/etc/crypttab`
+> ```bash
+> …
+> luks-aa0ce19c-cde9-44a2-adbd-4afb1845a959 UUID=aa0ce19c-cde9-44a2-adbd-4afb1845a959 none discard,initramfs
+> ```
+
+This line corresponds to the `crypto_LUKS` volume used by the `/var` volume as
+shown by `lsblk -fp` command:
+
+> LVM on LUKS
+> ```bash
+> …
+> └─/dev/vda3                                               crypto_LUKS 2              aa0ce19c-cde9-44a2-adbd-4afb1845a959
+>   └─/dev/mapper/luks-aa0ce19c-cde9-44a2-adbd-4afb1845a959 LVM2_member LVM2 001       lgk4ap-Fo39-PemI-eqKn-fxW2-e3Zt-CPGIv2
+>     └─/dev/mapper/separate-var                            xfs                        767b750e-bba7-4ea7-b2b8-b1e6a2e22e43    753,3M    22% /var
+> ```
+
+The above example is from LVM on LUKS encryption schema, but the same applies for
+the LUKS on LVM encryption schema – check the `crypto_LUKS` volume UUID.
+
+> LUKS on LVM
+> ```bash
+> …
+> └─/dev/vda3                                                 LVM2_member LVM2 001       lgk4ap-Fo39-PemI-eqKn-fxW2-e3Zt-CPGIv2
+>   └─/dev/mapper/separate-var                                crypto_LUKS 2              aa0ce19c-cde9-44a2-adbd-4afb1845a959
+>     └─/dev/mapper/luks-aa0ce19c-cde9-44a2-adbd-4afb1845a959 xfs                        767b750e-bba7-4ea7-b2b8-b1e6a2e22e43    781,5M    19% /var
+> ````
+
+> [!IMPORTANT]
+> After modifying `/etc/crypttab` it is necessary to run `update-initramfs -u`
+> (on Debian-like systems).
+
+###### Dracut Initrd Bootup
+
+Dracut ensures that root and swap file systems are unlocked automatically.
+OS Installer also ensures that kernel command line (in `/etc/default/grub`)
+contains necessary parameters for Dracut and Systemd. The unlocking takes both
+the kernel command line and copied lines of `/etc/crypttab` into consideration.
+
+The corresponding root and swap lines of `/etc/crypttab` are copied
+automatically into the initramfs image. We need to ensure that the `/var` volume
+options are copied as well and that the kernel command line references it too
+(see below).
+
+> [!IMPORTANT]
+> Be extremely careful, changing the following options might render the system
+> unbootable, requiring to use a rescue DVD and expert knowledge to boot it
+> back. Make system backup before proceeding!
+>
+> And just in case, `cryptsetup open /dev/<device> <mapped-device>`,
+> `mount /dev/mapper/<mapped-device> /<target>` and possibly also `lvm vgscan`
+> and `lvm lvdisplay -o lv_full_name,lv_dm_path` are your friends to rescue 😉.
+
+To ensure that the `/var` options are copied, we need to either add
+`x-initrd.attach` option to the corresponding line of  `/etc/crypttab` (to
+unlock the `/var` volume) _or_ `x-initrd.mount` to a corresponding line of
+`/etc/fstab` (to unlock _and_ mount the `/var` volume; Dracut finds the correct
+line of `/etc/crypttab` automatically) _or_ both (equivalent to
+`x-initrd.mount`).
+
+> `/etc/crypttab`
+> ```bash
+> …
+> luks-aa0ce19c-cde9-44a2-adbd-4afb1845a959 UUID=aa0ce19c-cde9-44a2-adbd-4afb1845a959 none discard,x-initrd.attach
+> ```
+
+> `/etc/fstab`
+> ```bash
+> …
+> UUID=767b750e-bba7-4ea7-b2b8-b1e6a2e22e43  /var  xfs  defaults,x-systemd.device-timeout=0,x-initrd.mount 0 0
+> ```
+
+See the `initramfs-tools` Initrd Bootup section how to find the corresponding
+`/etc/crypttab` line with `lsblk -fp`. The `/etc/fstab` line is matched based
+on the UUID on the actual filesystem (see the line with `/var` mount point on
+the far right of the `lsblk -fp` output).
+
+> [!IMPORTANT]
+> Do not forget to run `dracut -f` after changing the
+> `/etc/crypttab` or/and `/etc/fstab` files.
+
+> [!NOTE]
+> If we use `x-initrd.mount` option, the volume will be mounted in the
+> _initrd bootup_ phase. But this is not strictly necessary, Systemd service
+> startup order ensures that `/var` is mounted before `tcsd` is started during
+> the _System Manager bootup_ phase, so unlocking with `x-initrd.attach` is
+> enough.
+
+Next, we need to ensure that the volumes are found and unlocked. There are two
+kernel command line parameters in `/etc/default/grub`, which affect this:
+
+`rd.luks.uuid` – either all the values should be removed, or the UUID value
+of the `crypto_LUKS` volume must be added (with optional `luks-` prefix). If
+the option is present (the option can be repeated multiple times), only the
+listed volumes are initialized from the copied `/etc/crypttab` file. If the
+option is missing, _all_ lines from the copied `/etc/crypttab` file are
+considered.
+
+`rd.lvm.lv` – either all the values should be removed, or the `/var` full LVM
+volume name must be added. If the option is present (the option can be
+repeated multiple times), only the listed logical volumes will be initialized.
+If the option is missing, Dracut auto-detects LVM volumes during bootup.
+
+> [!NOTE]
+> The `rd.lvm.lv` option is important _only_ for the LUKS on LVM case,
+> because the `crypto_LUKS` volume is revealed after the LVM logical volume is
+> initialized. Without LVM initialization the LUKS volume cannot be unlocked.
+> The `rd.lvm.lv` option has to be either missing, or one of the values must
+> reference the full LVM volume name of the `/var` volume.
+
+For more info, check `man dracut` and `man systemd-cryptsetup-generator`.
+
+> [!NOTE]
+> Dracut internally uses the same Systemd options, so the same applies
+> also for the case when Systemd is missing inside the Dracut initrd
+>  environemnt.
+
+In order to find the `rd.lvm.lv` value, run `lvs -o lv_full_name,lv_dm_path`:
+
+> ```bash
+>   LV                   DMPath
+>   …
+>   separate/var         /dev/mapper/separate-var
+> ```
+
+It shows the Device Manager's path, which is shown in the `lsblk -fp` output
+too. The corresponding `rd.lvm.lv` value is therefore `rd.lvm.lv=separate/var`.
+
+Example of kernel command line from `/etc/default/grub` with all options present:
+
+```bash
+GRUB_CMDLINE_LINUX="rd.lvm.lv=fedora/root rd.luks.uuid=luks-21a9c1b8-c202-4985-809a-aba2d6fdab01 rd.lvm.lv=separate/var rd.luks.uuid=luks-aa0ce19c-cde9-44a2-adbd-4afb1845a959 quiet"
+```
+
+Example of kernel command line from `/etc/default/grub` with configuration
+taken from copied `/etc/crypttab` and Dracut loical volume auto-detection:
+
+```bash
+GRUB_CMDLINE_LINUX="quiet"
+```
+
+> [!IMPORTANT]
+> After changing the kernel command line, update Grub config with `update-grub2`
+> (on Debian-like systems) or `grub2-mkconfig -o /etc/grub2.cfg` (on Fedora-like
+> systems).
 
 #### PIN: PKCS#11
 
