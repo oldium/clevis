@@ -52,7 +52,9 @@ validate_pcrs() {
             [ -f "/sys/class/tpm/tpm0/pcr-${_pcr_bank}/${_pcr}" ] || return 1
         done
     else
-        [ "${_pcr_bank}" = "sha1" ] && { : | tpm_sealdata -z${_pcrs//,/ -p } >/dev/null 2>/dev/null; }
+        local pcr_args="${pcr_ids:+-p}${pcr_ids//,/ -p}"
+        [ "${_pcr_bank}" = "sha1" ] || return 1
+        tpm_sealdata ${pcr_args} -z </dev/null >/dev/null 2>&1 || return 1
     fi
 
     return 0
