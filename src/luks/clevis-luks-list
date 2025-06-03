@@ -33,7 +33,7 @@ function usage() {
     echo >&2
     echo "  -s SLOT The slot number to list" >&2
     echo >&2
-    echo "  -p      Print only a sorted space-separated list of bound pins" >&2
+    echo "  -p      Print only a sorted space-separated list of used pins bound to the specified device" >&2
     echo >&2
     exit 1
 }
