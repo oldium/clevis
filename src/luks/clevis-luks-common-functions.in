@@ -1210,7 +1210,7 @@ clevis_luks_type() {
 
 # clevis_kill_pid() kills process and its children in a portable way
 # Works with both procps ps and Busybox ps.
-function clevis_kill_pid() {
+clevis_kill_pid() {
     local pid="$1"
     local child_pids
 
