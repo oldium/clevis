@@ -7,14 +7,18 @@
 
 #define TCSD_NO_PRIVILEGE_DROP_ENV "TCSD_NO_PRIVILEGE_DROP"
 
-static int no_privilege_drop(void) {
+static int
+no_privilege_drop(void)
+{
     char *no_privilege_drop_env = getenv(TCSD_NO_PRIVILEGE_DROP_ENV);
     return (no_privilege_drop_env != NULL
             && no_privilege_drop_env[0] != '\0'
             && no_privilege_drop_env[0] != '0');
 }
 
-int setuid(uid_t uid) {
+int
+setuid(uid_t uid)
+{
     static int (*real_setuid)(uid_t) = NULL;
     if (no_privilege_drop()) {
         return 0;
@@ -26,7 +30,9 @@ int setuid(uid_t uid) {
     }
 }
 
-int setgid(gid_t gid) {
+int
+setgid(gid_t gid)
+{
     static int (*real_setgid)(uid_t) = NULL;
     if (no_privilege_drop()) {
         return 0;
@@ -40,7 +46,7 @@ int setgid(gid_t gid) {
 }
 
 static void __attribute ((constructor))
-set_line_buffering (void)
+set_line_buffering(void)
 {
     setvbuf(stdout, NULL, _IOLBF, 0);
 }
