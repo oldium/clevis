@@ -22,10 +22,11 @@
 TEST=$(basename "${0}")
 
 validate_pcrs() {
-    local _pcrs=",${1}"
-    [ "${_pcrs}" = "," ] && return 0
+    local _pcrs="${1}"
+    [ -z "${_pcrs}" ] && return 0
 
-    : | tpm_sealdata -z${_pcrs//,/ -p } >/dev/null 2>/dev/null
+    local pcr_args="${pcr_ids:+-p}${pcr_ids//,/ -p}"
+    tpm_sealdata ${pcr_args} -z </dev/null >/dev/null 2>&1
 }
 
 decode_jwe() {
