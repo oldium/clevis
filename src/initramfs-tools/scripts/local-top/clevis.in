@@ -56,7 +56,11 @@ get_pid_device_pins() {
 
     local cache="/var/cache/clevis-disks/${CRYPTTAB_SOURCE//\//_}"
     if [ ! -f "$cache" ]; then
-        local pins=$(clevis_luks_read_used_pins "$CRYPTTAB_SOURCE")
+        local pins
+        if ! pins=$(clevis_luks_read_used_pins "$CRYPTTAB_SOURCE"); then
+            return 1
+        fi
+
         echo "${CRYPTTAB_SOURCE}:${pins}" > "$cache"
     fi
 
