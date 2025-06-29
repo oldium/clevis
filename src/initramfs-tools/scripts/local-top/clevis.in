@@ -113,9 +113,12 @@ clevisloop() {
     local cryptkeyscript
     local askpass_info
     local sleep_time
+    local CRYPTTAB_SOURCE
     local OLD_CRYPTTAB_SOURCE=""
     local netcfg_attempted=0
     local tpm1cfg_attempted=0
+    local pins
+    local PASSFIFO
 
     if [ -x /bin/plymouth ] && plymouth --ping; then
         cryptkeyscript='plymouth ask-for-password'
