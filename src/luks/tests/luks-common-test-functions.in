@@ -35,6 +35,12 @@ luks2_existing_token_id_supported() {
     return @OLD_CRYPTSETUP_EXISTING_TOKEN_ID@
 }
 
+# A usable kernel session keyring is needed for token-id-from-keyring tests;
+# it is absent in some containers.
+keyring_supported() {
+    keyctl session - /bin/true >/dev/null 2>&1
+}
+
 # Creates a new LUKS1 or LUKS2 device to be used.
 new_device() {
     local LUKS="${1}"

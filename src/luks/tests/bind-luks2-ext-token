@@ -46,6 +46,10 @@ if  ! luks2_existing_token_id_supported; then
     skip_test "${TEST}: Existing token ID not supported"
 fi
 
+if ! keyring_supported; then
+    skip_test "${TEST}: session keyring unusable (e.g. Docker)"
+fi
+
 trap 'on_exit' EXIT
 trap 'exit' ERR
 
